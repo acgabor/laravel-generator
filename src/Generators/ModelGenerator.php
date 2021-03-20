@@ -88,6 +88,17 @@ class ModelGenerator extends BaseGenerator
             }
         }
 
+        if ($this->commandData->modelName == 'User')
+        {
+            $templateData = str_replace('$MODEL_EXTENDABLE_CLASS$', 'Authenticatable', $templateData);
+            $templateData = str_replace('$AUTHENTICATABLE_IMPORT$', 'use Illuminate\Foundation\Auth\User as Authenticatable;', $templateData);
+        }
+        else
+        {
+            $templateData = str_replace('$MODEL_EXTENDABLE_CLASS$', 'Model', $templateData);
+            $templateData = str_replace('$AUTHENTICATABLE_IMPORT$', '', $templateData);
+        }
+
         $templateData = str_replace('$PRIMARY$', $primary, $templateData);
 
         $templateData = str_replace('$FIELDS$', implode(','.infy_nl_tab(1, 2), $fillables), $templateData);
@@ -109,7 +120,7 @@ class ModelGenerator extends BaseGenerator
 
     private function fillSoftDeletes($templateData)
     {
-        if (!$this->commandData->getOption('softDelete')) {
+        if (!$this->commandData->getOption('softDelete') or !$this->isTimestampExistInCurrentTable(['deleted_at'])) {
             $templateData = str_replace('$SOFT_DELETE_IMPORT$', '', $templateData);
             $templateData = str_replace('$SOFT_DELETE$', '', $templateData);
             $templateData = str_replace('$SOFT_DELETE_DATES$', '', $templateData);
@@ -266,12 +277,13 @@ class ModelGenerator extends BaseGenerator
     {
         $timestamps = TableFieldsGenerator::getTimestampFieldNames();
 
+        
+
         $replace = '';
-        if (empty($timestamps)) {
+        if (empty($timestamps) or !$this->isTimestampExistInCurrentTable()) {
             $replace = infy_nl_tab()."public \$timestamps = false;\n";
         }
-
-        if ($this->commandData->getOption('fromTable') && !empty($timestamps)) {
+        elseif ($this->commandData->getOption('fromTable') && !empty($timestamps)) {
             list($created_at, $updated_at) = collect($timestamps)->map(function ($field) {
                 return !empty($field) ? "'$field'" : 'null';
             });
@@ -283,6 +295,20 @@ class ModelGenerator extends BaseGenerator
         return str_replace('$TIMESTAMPS$', $replace, $templateData);
     }
 
+    private function isTimestampExistInCurrentTable($timestampsToCheck = ['created_at','updated_at','deleted_at'])
+    {
+        $isTimestampExistInCurrentTable = false;
+        foreach ($this->commandData->fields as $field) {
+            if (in_array($field->name,$timestampsToCheck))
+            {
+                $isTimestampExistInCurrentTable = true;
+                break;
+            }
+        }
+
+        return $isTimestampExistInCurrentTable;
+    }
+
     private function generateRules()
     {
         $dont_require_fields = config('infyom.laravel_generator.options.hidden_fields', [])
@@ -291,6 +317,7 @@ class ModelGenerator extends BaseGenerator
         $rules = [];
 
         foreach ($this->commandData->fields as $field) {
+            if (in_array($field->name,['created_at','updated_at'])){continue;}
             if (!$field->isPrimary && !in_array($field->name, $dont_require_fields)) {
                 if ($field->isNotNull && empty($field->validations)) {
                     $field->validations = 'required';
